@@ -122,7 +122,8 @@ def _run_cmd(cmd, timeout):
                          stderr=subprocess.PIPE)
     return_code = p.wait()
     (stdoutdata, stderrdata) = p.communicate()
-    return return_code, stdoutdata, stderrdata
+    # Chomp \n on output
+    return return_code, stdoutdata.rstrip('\n'), stderrdata.rstrip('\n')
 
 
 def _set_cache(filename, cache):
