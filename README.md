@@ -24,31 +24,29 @@ Help :
     -d, --debug           Enable debug mode (log in file).
     -t TIMEOUT, --timeout TIMEOUT
                           Timeout for the command in sec.
+    -i INTERVAL, --interval INTERVAL
+                          Minimum interval between command in sec.
 
 Example :
 
-    ./cache_check.py --expire 300 --timeout 30 --command "my_slow_check"
+    ./cache_check.py --expire 300 --timeout 30 --interval 10 --command "my_slow_check"
 
   * Expire : Cache expire time
   * Timeout : Background command execution timeout 
+  * Interval : Minimum interval between two run command 
 
 
 Behavior
 ---------
 
   - If no cache file: Run background command => UNKNOWN
-  - If cache file is expired : Run background command => (UNKNOWN/CRITICAL)?
+  - If cache file is expired: Run background command => (UNKNOWN/CRITICAL)?
   - Else read the cache => CRITICAL/OK
 
-In all these cases the command will not run if it is already running.
+In all these cases the command will not run if it is already running or if command interval not respected.
 
 
 Run tests with coverage
 ------------------------
 
     nosetests -v --cover-package cache_check --with-coverage --cover-html test_cache_check.py
-
-Improvement
------------
-
-Add new arg `--interval` to specify the minimum time to wait before run command since last run time.

@@ -33,6 +33,29 @@ class Cache_check_TestCase(TestCase):
     def tearDown(self):
         super(Cache_check_TestCase, self).tearDown()
 
+    def test_runcmd_interval_is_respected(self):
+        with mock.patch('time.time', mock.MagicMock()) as time_mock:
+            # Cache empty so interval respected
+            time_mock.return_value = 50
+            cache = {}
+            result = cache_check._runcmd_interval_is_respected(cache=cache,
+                                                               interval=10)
+            self.assertTrue(result)
+
+            # Interval not respected
+            time_mock.return_value = 50
+            cache = {'last_check': 45}
+            result = cache_check._runcmd_interval_is_respected(cache=cache,
+                                                               interval=10)
+            self.assertFalse(result)
+
+            # Cache expired
+            time_mock.return_value = 61
+            cache = {'last_check': 50}
+            result = cache_check._runcmd_interval_is_respected(cache=cache,
+                                                               interval=10)
+            self.assertTrue(result)
+
     def test_cache_is_expired(self):
         with mock.patch('time.time', mock.MagicMock()) as time_mock:
             # Cache empty so expired
@@ -124,39 +147,53 @@ class Cache_check_TestCase(TestCase):
     def test_do_check(self):
         with mock.patch('cache_check._get_cache', mock.MagicMock()) as get_cache_mock, \
                   mock.patch('cache_check._set_cache', mock.MagicMock()) as set_cache_mock, \
-                  mock.patch('cache_check._cache_is_expired', mock.MagicMock()) as cache_expired_mock:
+                  mock.patch('cache_check._cache_is_expired', mock.MagicMock()) as cache_expired_mock, \
+                  mock.patch('cache_check._runcmd_interval_is_respected', mock.MagicMock()) as cache_runcmd_interval_is_respected:
             # Empty cache file but can write UNKNOWN
             get_cache_mock.return_value = None
             set_cache_mock.return_value = True
-            result = cache_check.do_check('foo.json', 60)
+            result = cache_check.do_check('foo.json', 60, -1)
             self.assertEquals(result, (cache_check.UNKNOWN, result[1], True))
             # Empty cache file unable to write CRITICAL
             get_cache_mock.return_value = None
             set_cache_mock.return_value = False
-            result = cache_check.do_check('foo.json', 60)
+            result = cache_check.do_check('foo.json', 60, -1)
             self.assertEquals(result, (cache_check.CRITICAL, result[1], False))
             # Cache expired CRITICAL
             cache_expired_mock.return_value = True
             get_cache_mock.return_value = {'foo': 'bar'}
-            result = cache_check.do_check('foo.json', 60)
+            result = cache_check.do_check('foo.json', 60, -1)
             self.assertEquals(result[0], cache_check.CRITICAL)
 
             # Cache ok, command running : don't run command exit in cache
+            # And interval not respected
             cache_expired_mock.return_value = False
+            cache_runcmd_interval_is_respected.return_value = False
             get_cache_mock.return_value = {'refresh_launched': True,
                                            'stdout': 'foo',
                                            'stderr': 'bar',
                                            'return_code': cache_check.OK,
                                             }
-            result = cache_check.do_check('foo.json', 60)
+            result = cache_check.do_check('foo.json', 60, -1)
             self.assertEquals(result, (cache_check.OK, 'foo - bar', False))
 
-            # Cache unknown return code, command not running : run command
+            # Cache unknown return code, command not running
+            # but interval not respected : don't run command
             cache_expired_mock.return_value = False
+            cache_runcmd_interval_is_respected.return_value = False
             get_cache_mock.return_value = {'refresh_launched': False,
                                            'return_code': 42,
                                             }
-            result = cache_check.do_check('foo.json', 60)
+            result = cache_check.do_check('foo.json', 60, 10)
+            self.assertEquals(result, (cache_check.UNKNOWN, result[1], False))
+
+            # Cache unknown return code, command not running : run command
+            cache_expired_mock.return_value = False
+            cache_runcmd_interval_is_respected.return_value = True
+            get_cache_mock.return_value = {'refresh_launched': False,
+                                           'return_code': 42,
+                                            }
+            result = cache_check.do_check('foo.json', 60, -1)
             self.assertEquals(result, (cache_check.UNKNOWN, result[1], True))
 
     def test_exit_and_refresh_cache(self):

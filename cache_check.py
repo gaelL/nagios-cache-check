@@ -1,13 +1,5 @@
 #!/usr/bin/env python
 
-# script behavior
-# python cache_check.py --expire 300  --timeout 30 --command "my_slow_check -c 2 -w 1"
-#   1) No cache -> return UNKNOWN (cache empty) and launch detached background command
-#   2) Return cache result if not expired and if command is not running -> launch command
-
-# Improvement : Add --interval arg between 2 run command.
-#  Run command only if interval is respected and command is not running
-
 import sys, os, time
 import subprocess
 import argparse
@@ -31,14 +23,18 @@ PARSER.add_argument("-t", "--timeout",
             help="Timeout for the command in sec.",
             type=int,
             default=10)
+PARSER.add_argument("-i", "--interval",
+            help="Minimum interval between command in sec.",
+            type=int,
+            default=-1)
 
 # Init value
-OK=0
-WARNING=1
-CRITICAL=2
-UNKNOWN=3
+OK = 0
+WARNING = 1
+CRITICAL = 2
+UNKNOWN = 3
 
-CACHE_DIR='/dev/shm/cache_check'
+CACHE_DIR = '/dev/shm/cache_check'
 LOG = logging.getLogger(__name__)
 
 
@@ -102,7 +98,7 @@ def _exit_and_refresh_cache(command, timeout, cache_file, exit_code):
     start_time = time.time()
     (return_code, stdout, stderr) = _run_cmd(command, timeout)
     now = time.time()
-    runtime = round(now - start_time,2)
+    runtime = round(now - start_time, 2)
 
     # Refresh cache with new infos
     cache = {
@@ -120,7 +116,6 @@ def _exit_and_refresh_cache(command, timeout, cache_file, exit_code):
 
 def _run_cmd(cmd, timeout):
     "Run a system command"
-
     p = subprocess.Popen('timeout %s %s' % (timeout, cmd),
                          shell=True,
                          stdout=subprocess.PIPE,
@@ -156,6 +151,14 @@ def _get_cache(filename):
     except (ValueError, IOError):
         return None
 
+def _runcmd_interval_is_respected(cache, interval):
+    'Check if interval between 2 run command in respected'
+    if interval == -1: return True
+    now = int(time.time())
+    last_time = cache.get('last_check', 0)
+    if (now - last_time) > interval:
+        return True
+    return False
 
 def _cache_is_expired(cache, expire):
     'Check if cache is expired'
@@ -166,7 +169,7 @@ def _cache_is_expired(cache, expire):
     return False
 
 
-def do_check(cache_file, expire):
+def do_check(cache_file, expire, interval):
     'Return outputcode, outputstring, run_cmd'
     # Get cache for this check
     cache = _get_cache(cache_file)
@@ -178,10 +181,12 @@ def do_check(cache_file, expire):
             return UNKNOWN, "UNKNOWN - Nothing in cache file %s" % cache_file, True
 
     # Run background command if this command is not running
-    if cache.get('refresh_launched', False):
-        run_cmd = False
-    else:
+    # And minimum time interval is respected
+    if not cache.get('refresh_launched', False) \
+    and _runcmd_interval_is_respected(cache, interval):
         run_cmd = True
+    else:
+        run_cmd = False
 
     LOG.debug("%s Command will be launched %s" % (cache_file, run_cmd))
 
@@ -207,12 +212,12 @@ def _init_log(debug):
     log = logging.getLogger()
     log.setLevel(logging.DEBUG)
     if debug:
-        hdl = logging.FileHandler('/tmp/cache_check.log');
-        logformat =  '%(asctime)s %(levelname)s -: %(message)s'
+        hdl = logging.FileHandler('/tmp/cache_check.log')
+        logformat = '%(asctime)s %(levelname)s -: %(message)s'
         formatter = logging.Formatter(logformat)
-        hdl.setFormatter(formatter);
+        hdl.setFormatter(formatter)
     else:
-        hdl = logging.NullHandler();
+        hdl = logging.NullHandler()
     log.addHandler(hdl)
 
 
@@ -227,8 +232,11 @@ if __name__ == '__main__':
     cmd_hash = hashlib.md5(ARGS.command).hexdigest()
     cache_file = 'cache_%s.json' % cmd_hash
 
-    (output_code, output_string, run_refresh) = do_check(cache_file, ARGS.expire)
-    LOG.warning("%s exit %s / output : %s" % (cache_file, output_code, output_string))
+    (output_code, output_string, run_refresh) = do_check(cache_file,
+                                                         ARGS.expire,
+                                                         ARGS.interval)
+    LOG.warning("%s exit %s / output : %s" % (cache_file, output_code,
+                                              output_string))
 
     print output_string
     if run_refresh:
