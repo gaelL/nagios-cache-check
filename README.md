@@ -1,6 +1,8 @@
 Nagios cache for slow check
 =============================
 
+![travis status](https://travis-ci.org/gaelL/nagios-cache-check.svg?branch=master)
+
 Cache script for nagios checks :
 
   * Easy to setup
