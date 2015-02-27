@@ -1,5 +1,3 @@
 mock
 nose
-subprocess
 unittest2
-
